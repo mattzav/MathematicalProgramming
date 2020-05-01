@@ -45,6 +45,8 @@ public class Main {
 
 	static int[] weights;
 
+	static int k;
+
 	public static void main(String[] args) throws IOException, IloException {
 
 		for (int i = 1; i <= 10; i++) {
@@ -52,21 +54,22 @@ public class Main {
 			readInstance(i);
 
 			for (int iter = 0; iter <= 1; iter++) {
-				for (int a = 0; a <= 2; a++) {
-					IloCplex model = new IloCplex();
-					if (a == 0)
-						createMtzModel(iter, model);
-					else if (a == 1)
-						createSCFModel(iter, model);
-					else
-						createMCFModel(iter, model);
+				if (iter == 1)
+					k = numberOfNodes / 2;
+				else
+					k = numberOfNodes / 5;
 
-					// long start = System.currentTimeMillis();
+				for (int a = 1; a <= 1; a++) {
+					IloCplex model = new IloCplex();
+					if (a == 1)
+						createMCFModel(model);
+
+					long start = System.currentTimeMillis();
 					// double startC = model.getCplexTime();
 					if (model.solve()) {
-//					long elapsed = (System.currentTimeMillis() - start) / 1000;
+						long elapsed = (System.currentTimeMillis() - start) / 1000;
 //					double elapsedC = model.getCplexTime() - startC;
-						System.out.print(model.getObjValue() + " ");
+						System.out.print(model.getObjValue() + " " + elapsed + " --- ");
 //
 //					for (int index = 0; index < numberOfNodes; index++) {
 //
@@ -89,29 +92,18 @@ public class Main {
 
 	}
 
-	private static void createMCFModel(int iter, IloCplex model) throws IloException {
-		int k = -1;
-		if (iter == 1)
-			k = numberOfNodes / 2;
-		else
-			k = numberOfNodes / 5;
+	private static void createMCFModel(IloCplex model) throws IloException {
 
-		int bigM = k;
 		// creating the model
 		model.setOut(null);
 		model.setParam(IloCplex.Param.TimeLimit, 3600);
 
 		// creating variables
-		IloNumVar[] x = model.boolVarArray(numberOfEdges);
-		IloNumVar[] v = model.boolVarArray(numberOfEdges);
+		IloNumVar[] x = model.boolVarArray(numberOfEdges * 2 - (numberOfNodes - 1));
 
-		IloNumVar[][] f = new IloNumVar[numberOfEdges][];
-		for (int index = 0; index < numberOfEdges; index++)
+		IloNumVar[][] f = new IloNumVar[numberOfEdges * 2 - (numberOfNodes - 1)][];
+		for (int index = 0; index < numberOfEdges * 2 - (numberOfNodes - 1); index++)
 			f[index] = model.numVarArray(numberOfNodes, 0, 1);
-
-		IloNumVar[][] s = new IloNumVar[numberOfEdges][];
-		for (int index = 0; index < numberOfEdges; index++)
-			s[index] = model.numVarArray(numberOfNodes, 0, 1);
 
 		IloNumVar[] y = model.boolVarArray(numberOfNodes);
 
@@ -121,65 +113,58 @@ public class Main {
 
 		for (int index = 0; index < numberOfEdges; index++) {
 			x[index].setName("x_{" + edges[index].getEndpoint_1() + "," + edges[index].getEndpoint_2() + "}");
-			v[index].setName("x_{" + edges[index].getEndpoint_2() + "," + edges[index].getEndpoint_1() + "}");
 
 			for (int i = 0; i < numberOfNodes; i++) {
 				f[index][i].setName(
 						"f_{" + edges[index].getEndpoint_1() + "," + edges[index].getEndpoint_2() + "," + (i) + "}");
-				s[index][i].setName(
-						"f_{" + edges[index].getEndpoint_2() + "," + edges[index].getEndpoint_1() + "," + (i) + "}");
+
 			}
 
 		}
 
 		// creating objective function
-		model.addMinimize(model.sum(model.scalProd(x, weights), model.scalProd(v, weights)));
+		model.addMinimize(model.scalProd(x, weights));
 
 		model.addEq(model.sum(y), k + 1); // constraint (1)
 
-		model.addEq(model.sum(model.sum(x), model.sum(v)), k); // constraint (2)
+		model.addEq(model.sum(x), k); // constraint (2)
 
 		// constraint (3)
-		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
-		for (int index = 0; index < numberOfEdges; index++)
-			if (edges[index].getEndpoint_1() == 0)
-				oneExitingByZero.addTerm(1, x[index]);
-			else if (edges[index].getEndpoint_2() == 0)
-				oneExitingByZero.addTerm(1, v[index]);
-
-		model.addEq(oneExitingByZero, 1);
-		// end constraint (3)
-
-		// constraint (4)
 		for (int node = 1; node < numberOfNodes; node++) {
 			IloLinearNumExpr oneIncomingForNonRoot = model.linearNumExpr();
 			for (int index = 0; index < numberOfEdges; index++) {
 				if (edges[index].getEndpoint_2() == node)
 					oneIncomingForNonRoot.addTerm(1, x[index]);
 				else if (edges[index].getEndpoint_1() == node)
-					oneIncomingForNonRoot.addTerm(1, v[index]);
+					oneIncomingForNonRoot.addTerm(1, x[index + numberOfEdges - (numberOfNodes - 1)]);
 			}
 			model.addEq(oneIncomingForNonRoot, y[node]);
 		}
+		// end constraint (3)
+
+		// constraint (4)
+		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
+		for (int index = 0; index < numberOfEdges; index++)
+			if (edges[index].getEndpoint_1() == 0)
+				oneExitingByZero.addTerm(1, x[index]);
+		model.addEq(oneExitingByZero, 1);
 		// end constraint (4)
 
-//		// constraint (5)
-//		for (int index = 0; index < numberOfEdges; index++) {
-//			model.addLe(model.sum(x[index], v[index]), 1);
-//		}
-//		// end constraint (5)
-
-		// constraint (6)
+		// constraint (5)
 		for (int index = 0; index < numberOfEdges; index++) {
 			int endPoint_1 = edges[index].getEndpoint_1();
 			int endPoint_2 = edges[index].getEndpoint_2();
 
-			model.addGe(model.sum(y[endPoint_1], y[endPoint_2]),
-					model.sum(model.prod(2, x[index]), model.prod(2, v[index])));
-		}
-		// end constraint (6)
+			if (endPoint_1 != 0)
+				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.sum(model.prod(2, x[index]),
+						model.prod(2, x[index + numberOfEdges - (numberOfNodes - 1)])));
+			else
+				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.prod(2, x[index]));
 
-		// constraint (7)
+		}
+		// end constraint (5)
+
+		// constraint (6)
 		for (int i = 0; i < numberOfNodes; i++) {
 			for (int index = 0; index < numberOfNodes; index++) {
 				// compute mantained flow for node index for commodity i
@@ -187,10 +172,15 @@ public class Main {
 				for (int j = 0; j < numberOfEdges; j++) {
 					if (edges[j].getEndpoint_2() == index) {
 						mantainedFlowFromIndexCommmodityI.addTerm(1, f[j][i]);
-						mantainedFlowFromIndexCommmodityI.addTerm(-1, s[j][i]);
+
+						if (edges[j].getEndpoint_1() != 0)
+							mantainedFlowFromIndexCommmodityI.addTerm(-1,
+									f[j + numberOfEdges - (numberOfNodes - 1)][i]);
 					} else if (edges[j].getEndpoint_1() == index) {
 						mantainedFlowFromIndexCommmodityI.addTerm(-1, f[j][i]);
-						mantainedFlowFromIndexCommmodityI.addTerm(1, s[j][i]);
+
+						if (edges[j].getEndpoint_1() != 0)
+							mantainedFlowFromIndexCommmodityI.addTerm(1, f[j + numberOfEdges - (numberOfNodes - 1)][i]);
 					}
 				}
 
@@ -204,53 +194,35 @@ public class Main {
 			}
 		}
 
-		// end constraint (7)
+		// end constraint (6)
 
-		// constraint (8)
+		// constraint (7)
 		for (int i = 0; i < numberOfNodes; i++) {
 			for (int index = 0; index < numberOfEdges; index++) {
 				model.addLe(f[index][i], model.prod(1, x[index]));
-				model.addLe(s[index][i], model.prod(1, v[index]));
+				if (edges[index].getEndpoint_1() != 0)
+					model.addLe(f[index + numberOfEdges - (numberOfNodes - 1)][i],
+							model.prod(1, x[index + numberOfEdges - (numberOfNodes - 1)]));
 
 			}
 		}
-		// end constraint (8)
+		// end constraint (7)
+
+		model.addEq(y[0], 1); // constraint (9)
 
 	}
 
-	private static void createSCFModel(int iter, IloCplex model) throws IloException {
-		int k = -1;
-		if (iter == 1)
-			k = numberOfNodes / 2;
-		else
-			k = numberOfNodes / 5;
+	private static void createSCFModel(IloCplex model) throws IloException {
 
-		int bigM = k;
 		// creating the model
 		model.setOut(null);
 		model.setParam(IloCplex.Param.TimeLimit, 3600);
 
 		// creating variables
-		IloNumVar[] x = model.boolVarArray(numberOfEdges);
-		IloNumVar[] v = model.boolVarArray(numberOfEdges);
-		IloNumVar[] f = model.numVarArray(numberOfEdges, 0.0, k);
-		IloNumVar[] s = model.numVarArray(numberOfEdges, 0.0, k);
+		IloNumVar[] x = model.boolVarArray(numberOfEdges * 2 - (numberOfNodes - 1));
+		IloNumVar[] f = model.numVarArray(numberOfEdges * 2 - (numberOfNodes - 1), 0.0, k);
 
 		IloNumVar[] y = model.boolVarArray(numberOfNodes);
-
-//		//provaaaaaaaaaaa (impongo zero agli archi entranti in 0)
-//		for(int index = 0;index<numberOfEdges;index++)
-//			if(edges[index].getEndpoint_1()==0) {
-//				model.addEq(0, v[index]);
-//				model.addEq(0, s[index]);
-//			}
-//			else if(edges[index].getEndpoint_2()==0) {
-//				model.addEq(0, x[index]);
-//				model.addEq(0, f[index]);
-//			}
-//			
-//		
-//		//endprovaaaaaaaa
 
 		for (int index = 0; index < numberOfNodes; index++) {
 			y[index].setName("y" + index);
@@ -258,100 +230,193 @@ public class Main {
 
 		for (int index = 0; index < numberOfEdges; index++) {
 			x[index].setName("x_{" + edges[index].getEndpoint_1() + "," + edges[index].getEndpoint_2() + "}");
-			v[index].setName("x_{" + edges[index].getEndpoint_2() + "," + edges[index].getEndpoint_1() + "}");
+			x[index + numberOfEdges - (numberOfNodes - 1)]
+					.setName("x_{" + edges[index].getEndpoint_2() + "," + edges[index].getEndpoint_1() + "}");
 
 			f[index].setName("f_{" + edges[index].getEndpoint_1() + "," + edges[index].getEndpoint_2() + "}");
-			s[index].setName("f_{" + edges[index].getEndpoint_2() + "," + edges[index].getEndpoint_1() + "}");
+			f[index + numberOfEdges - (numberOfNodes - 1)]
+					.setName("f_{" + edges[index].getEndpoint_2() + "," + edges[index].getEndpoint_1() + "}");
 
 		}
 
 		// creating objective function
-		model.addMinimize(model.sum(model.scalProd(x, weights), model.scalProd(v, weights)));
+		model.addMinimize(model.scalProd(x, weights));
 
 		model.addEq(model.sum(y), k + 1); // constraint (1)
 
-		model.addEq(model.sum(model.sum(x), model.sum(v)), k); // constraint (2)
+		model.addEq(model.sum(x), k); // constraint (2)
 
 		// constraint (3)
-		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
-		for (int index = 0; index < numberOfEdges; index++)
-			if (edges[index].getEndpoint_1() == 0)
-				oneExitingByZero.addTerm(1, x[index]);
-			else if (edges[index].getEndpoint_2() == 0)
-				oneExitingByZero.addTerm(1, v[index]);
-
-		model.addEq(oneExitingByZero, 1);
-		// end constraint (3)
-
-		// constraint (4)
 		for (int node = 1; node < numberOfNodes; node++) {
 			IloLinearNumExpr oneIncomingForNonRoot = model.linearNumExpr();
 			for (int index = 0; index < numberOfEdges; index++) {
 				if (edges[index].getEndpoint_2() == node)
 					oneIncomingForNonRoot.addTerm(1, x[index]);
 				else if (edges[index].getEndpoint_1() == node)
-					oneIncomingForNonRoot.addTerm(1, v[index]);
+					oneIncomingForNonRoot.addTerm(1, x[index + numberOfEdges - (numberOfNodes - 1)]);
 			}
 			model.addEq(oneIncomingForNonRoot, y[node]);
 		}
+		// end constraint (3)
+
+		// constraint (4)
+		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
+		for (int index = 0; index < numberOfEdges; index++)
+			if (edges[index].getEndpoint_1() == 0)
+				oneExitingByZero.addTerm(1, x[index]);
+		model.addEq(oneExitingByZero, 1);
 		// end constraint (4)
 
-//		// constraint (5)
-//		for (int index = 0; index < numberOfEdges; index++) {
-//			model.addLe(model.sum(x[index], v[index]), 1);
-//		}
-//		// end constraint (5)
-
-		// constraint (6)
+		// constraint (5)
 		for (int index = 0; index < numberOfEdges; index++) {
 			int endPoint_1 = edges[index].getEndpoint_1();
 			int endPoint_2 = edges[index].getEndpoint_2();
 
-			model.addGe(model.sum(y[endPoint_1], y[endPoint_2]),
-					model.sum(model.prod(2, x[index]), model.prod(2, v[index])));
-		}
-		// end constraint (6)
+			if (endPoint_1 != 0)
+				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.sum(model.prod(2, x[index]),
+						model.prod(2, x[index + numberOfEdges - (numberOfNodes - 1)])));
+			else
+				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.prod(2, x[index]));
 
-		// constraint (7)
+		}
+		// end constraint (5)
+
+		// constraint (6)
 		IloLinearNumExpr kExitingByZero = model.linearNumExpr();
 		for (int index = 0; index < numberOfEdges; index++)
 			if (edges[index].getEndpoint_1() == 0)
 				kExitingByZero.addTerm(1, f[index]);
 		model.addEq(kExitingByZero, k);
-		// end constraint (7)
+		// end constraint (6)
 
-		// constraint (8)
+		// constraint (7)
 		for (int node = 1; node < numberOfNodes; node++) {
 			IloLinearNumExpr oneFlowMantained = model.linearNumExpr();
 			for (int index = 0; index < numberOfEdges; index++) {
 				if (edges[index].getEndpoint_2() == node) {
 					oneFlowMantained.addTerm(1, f[index]);
-					oneFlowMantained.addTerm(-1, s[index]);
+					if (edges[index].getEndpoint_1() != 0)
+						oneFlowMantained.addTerm(-1, f[index + numberOfEdges - (numberOfNodes - 1)]);
 				} else if (edges[index].getEndpoint_1() == node) {
-					oneFlowMantained.addTerm(1, s[index]);
+					oneFlowMantained.addTerm(1, f[index + numberOfEdges - (numberOfNodes - 1)]);
 					oneFlowMantained.addTerm(-1, f[index]);
 				}
 			}
 			model.addEq(oneFlowMantained, y[node]);
 		}
-		// end constraint (8)
+		// end constraint (7)
 
+		// constraint(8)
 		for (int index = 0; index < numberOfEdges; index++) {
 			model.addLe(f[index], model.prod(k, x[index]));
-			model.addLe(s[index], model.prod(k, v[index]));
+			model.addLe(f[index + numberOfEdges - (numberOfNodes - 1)],
+					model.prod(k, x[index + numberOfEdges - (numberOfNodes - 1)]));
 
 		}
+		// end constraint(8)
+
+		model.addEq(y[0], 1); // constraint (9)
+
+	}
+
+	private static void createMtzModelModified(IloCplex model) throws IloException {
+
+		int bigM = k - 1;
+
+		// creating the model
+		model.setOut(null);
+		model.setParam(IloCplex.Param.TimeLimit, 3600);
+
+		// creating variables
+		IloNumVar[] x = model.boolVarArray(numberOfEdges * 2 - (numberOfNodes - 1));
+
+		IloNumVar[] y = model.boolVarArray(numberOfNodes);
+		IloNumVar[] u = model.numVarArray(numberOfNodes, 0.0, k);
+
+		for (int index = 0; index < numberOfNodes; index++) {
+			u[index].setName("u" + index);
+			y[index].setName("y" + index);
+		}
+
+		for (int index = 0; index < numberOfEdges; index++) {
+			x[index].setName("x_{" + edges[index].getEndpoint_1() + "," + edges[index].getEndpoint_2() + "}");
+
+		}
+
+		// creating objective function
+		model.addMinimize(model.scalProd(x, weights));
+
+		model.addEq(model.sum(y), k + 1); // constraint (1)
+
+		model.addEq(model.sum(x), k); // constraint (2)
+
+		// constraint (3)
+		for (int node = 1; node < numberOfNodes; node++) {
+			IloLinearNumExpr oneIncomingForNonRoot = model.linearNumExpr();
+			for (int index = 0; index < numberOfEdges; index++) {
+				if (edges[index].getEndpoint_2() == node)
+					oneIncomingForNonRoot.addTerm(1, x[index]);
+				else if (edges[index].getEndpoint_1() == node)
+					oneIncomingForNonRoot.addTerm(1, x[index + numberOfEdges - (numberOfNodes - 1)]);
+			}
+			model.addEq(oneIncomingForNonRoot, y[node]);
+		}
+		// end constraint (3)
+
+		// constraint (4)
+		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
+		for (int index = 0; index < numberOfEdges; index++)
+			if (edges[index].getEndpoint_1() == 0)
+				oneExitingByZero.addTerm(1, x[index]);
+		model.addEq(oneExitingByZero, 1);
+		// end constraint (4)
+
+		// constraint (5)
+		for (int index = 0; index < numberOfEdges; index++) {
+			int endPoint_1 = edges[index].getEndpoint_1();
+			int endPoint_2 = edges[index].getEndpoint_2();
+
+			if (endPoint_1 != 0)
+				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.sum(model.prod(2, x[index]),
+						model.prod(2, x[index + numberOfEdges - (numberOfNodes - 1)])));
+			else
+				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.prod(2, x[index]));
+
+		}
+		// end constraint (5)
+
+		// constraint (6)
+		for (int index = 1; index < numberOfNodes; index++) {
+			model.addLe(u[index], model.prod(y[index], k));
+			model.addGe(u[index], y[index]);
+		}
+		// end constraint (6)
+
+		// constraint (7)
+		for (int index = 0; index < numberOfEdges; index++) {
+			int endPoint_1 = edges[index].getEndpoint_1();
+			int endPoint_2 = edges[index].getEndpoint_2();
+
+			model.addLe(model.sum(u[endPoint_1], x[index]),
+					model.sum(u[endPoint_2], model.prod(bigM, model.sum(1, model.prod(-1, x[index])))));
+
+			if (endPoint_1 != 0)
+				model.addLe(model.sum(u[endPoint_2], x[index + numberOfEdges - (numberOfNodes - 1)]),
+						model.sum(u[endPoint_1], model.prod(bigM,
+								model.sum(1, model.prod(-1, x[index + numberOfEdges - (numberOfNodes - 1)])))));
+		}
+		// end constraint (7)
+
+		model.addEq(u[0], 0); // constraint (8)
+
+		model.addEq(y[0], 1); // constraint (9)
 
 	}
 
 	private static void createMtzModel(int iter, IloCplex model) throws IloException {
-		int k = -1;
-		if (iter == 1)
-			k = numberOfNodes / 2;
-		else
-			k = numberOfNodes / 5;
 
-		int bigM = k;
+		int bigM = k - 1;
+
 		// creating the model
 		model.setOut(null);
 		model.setParam(IloCplex.Param.TimeLimit, 3600);
@@ -457,7 +522,7 @@ public class Main {
 		numberOfNodes = Integer.valueOf(br.readLine());
 		numberOfEdges = Integer.valueOf(br.readLine());
 		edges = new Pair[numberOfEdges];
-		weights = new int[numberOfEdges];
+		weights = new int[numberOfEdges * 2 - (numberOfNodes - 1)]; // -(numberOfNodes-1) because we dont need (v,0)
 
 		String currentRow;
 		for (int rangeEdge = 0; rangeEdge < numberOfEdges; rangeEdge++) {
@@ -469,7 +534,12 @@ public class Main {
 			int weight = Integer.valueOf(parameters[3]);
 
 			edges[indexOfEdge] = new Pair(endPoint_1, endPoint_2);
+
 			weights[indexOfEdge] = weight;
+
+			if (endPoint_1 != 0)
+				weights[indexOfEdge + numberOfEdges - (numberOfNodes - 1)] = weight;
+
 		}
 
 	}
