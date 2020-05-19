@@ -47,12 +47,12 @@ public class MainVecchio {
 
 	public static void main(String[] args) throws IOException, IloException {
 
-		for (int i = 10; i <= 10; i++) {
+		for (int i = 1; i <= 1; i++) {
 
 			readInstance(i);
 
-			for (int iter = 1; iter <= 1; iter++) {
-				for (int a = 1; a <= 1; a++) {
+			for (int iter = 0; iter <= 1; iter++) {
+				for (int a = 0; a <= 1; a++) {
 					IloCplex model = new IloCplex();
 					if (a == 0)
 						createMtzModel(iter, model);
@@ -455,7 +455,6 @@ public class MainVecchio {
 		else
 			file = "data/g10.dat";
 
-		file = "data/prova.dat";
 
 		BufferedReader br = new BufferedReader(new FileReader(file));
 
