@@ -1,20 +1,3 @@
-
-/* --------------------------------------------------------------------------
-* File: MIPex1.java
-* Version 12.8.0
-* --------------------------------------------------------------------------
-* Licensed Materials - Property of IBM
-* 5725-A06 5725-A29 5724-Y48 5724-Y49 5724-Y54 5724-Y55 5655-Y21
-* Copyright IBM Corporation 2001, 2017. All Rights Reserved.
-*
-* US Government Users Restricted Rights - Use, duplication or
-* disclosure restricted by GSA ADP Schedule Contract with
-* IBM Corp.
-* --------------------------------------------------------------------------
-*
-* MIPex1.java - Entering and optimizing a MIP problem
-*/
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -22,18 +5,7 @@ import java.io.FileReader;
 import java.io.IOException;
 
 import ilog.concert.*;
-import ilog.concert.IloCopyManager.Check;
 import ilog.cplex.*;
-import ilog.cplex.IloCplex.Callback;
-import ilog.cplex.IloCplex.Goal;
-import ilog.cplex.IloCplex.IncumbentCallback;
-
-import jxl.Workbook;
-import jxl.write.Label;
-import jxl.write.Number;
-import jxl.write.WritableSheet;
-import jxl.write.WritableWorkbook;
-import jxl.write.WriteException;
 
 // 1) number of nodes
 // 2) number of edges
@@ -53,35 +25,53 @@ public class Main {
 		for (int i = 1; i <= 10; i++) {
 
 			readInstance(i);
-			System.out.println("Instance " + i);
+			String toAdd = "0";
+			if (i == 10)
+				toAdd = "";
+			System.out.println("---------------");
+			System.out.println("Graph " + toAdd + i);
+
 			for (int iter = 0; iter <= 1; iter++) {
 				if (iter == 1)
 					k = numberOfNodes / 2;
 				else
 					k = numberOfNodes / 5;
+				
+				System.out.println(" \n k = " + k);
 
-				System.out.println("k = " + k);
 				for (int modelIter = 0; modelIter <= 2; modelIter++) {
 					IloCplex model = new IloCplex();
+
+					model.setOut(null);
+					model.setParam(IloCplex.Param.TimeLimit, 3600);
+//					model.setParam(IloCplex.BooleanParam.MemoryEmphasis, true); // reduce storage where possible
+
 					if (modelIter == 0)
 						createMtzModel(model);
 					else if (modelIter == 1)
 						createSCFModel(model);
 					else
-						createMCFModel(model);
+						createMCF(model);
 
 					long start = System.currentTimeMillis();
-					if (model.solve()) {
-						System.out.println(getNameModel(modelIter) + " Time="
-								+ (System.currentTimeMillis() - start) / 1000 + " Gap=" + model.getMIPRelativeGap()
-								+ " Number of Nodes = " + model.getNnodes() + " Obj Value=" + model.getObjValue());
-					} else {
-						System.out.println(getNameModel(modelIter) + " Time="
-								+ (System.currentTimeMillis() - start) / 1000 + " Gap=" + model.getMIPRelativeGap()
-								+ " Number of Nodes = " + model.getNnodes() + " Obj Value=" + model.getObjValue());
+					try {
+						if (model.solve())
+							System.out.println("Model = " + getNameModel(modelIter) + " Time = "
+									+ +(System.currentTimeMillis() - start) / 1000 + "     Gap = "
+									+ model.getMIPRelativeGap() + "     N.B&B = " + model.getNnodes()
+									+ "     ObjValue = " + model.getObjValue());
+						else if (model.solve())
+							System.out.println("Model = " + getNameModel(modelIter) + " Time = "
+									+ +(System.currentTimeMillis() - start) / 1000 + "     Gap = "
+									+ model.getMIPRelativeGap() + "     N.B&B = " + model.getNnodes()
+									+ "     ObjValue = " + model.getObjValue());
+
+					} catch (Exception e) {
+						System.out.println("error during the process");
 					}
+
 				}
-				System.out.println();
+
 			}
 
 		}
@@ -98,16 +88,11 @@ public class Main {
 
 	private static void createMtzModel(IloCplex model) throws IloException {
 
-		System.out.println("Loading MTZ..");
+//		System.out.println("Loading MTZ..");
 		int bigM = k;
-
-		// creating the model
-		model.setOut(null);
-		model.setParam(IloCplex.Param.TimeLimit, 3600);
 
 		// creating variables
 		IloNumVar[] x = model.boolVarArray(numberOfEdges * 2 - (numberOfNodes - 1));
-
 		IloNumVar[] y = model.boolVarArray(numberOfNodes);
 		IloNumVar[] u = model.numVarArray(numberOfNodes, 0.0, k);
 
@@ -132,11 +117,11 @@ public class Main {
 		// end constraint (4)
 
 		// constraint (5)
-		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
+		IloLinearNumExpr oneLeavingRoot = model.linearNumExpr();
 		for (int index = 0; index < numberOfEdges; index++)
 			if (edges[index].getEndpoint_1() == 0)
-				oneExitingByZero.addTerm(1, x[index]);
-		model.addEq(oneExitingByZero, 1);
+				oneLeavingRoot.addTerm(1, x[index]);
+		model.addEq(oneLeavingRoot, 1);
 		// end constraint (5)
 
 		// constraint (6)
@@ -181,10 +166,7 @@ public class Main {
 
 	private static void createSCFModel(IloCplex model) throws IloException {
 
-		System.out.println("Loading SCF..");
-		// creating the model
-		model.setOut(null);
-		model.setParam(IloCplex.Param.TimeLimit, 3600);
+//		System.out.println("Loading SCF..");
 
 		// creating variables
 		IloNumVar[] x = model.boolVarArray(numberOfEdges * 2 - (numberOfNodes - 1));
@@ -212,11 +194,11 @@ public class Main {
 		// end constraint (16)
 
 		// constraint (17)
-		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
+		IloLinearNumExpr oneLeavingRoot = model.linearNumExpr();
 		for (int index = 0; index < numberOfEdges; index++)
 			if (edges[index].getEndpoint_1() == 0)
-				oneExitingByZero.addTerm(1, x[index]);
-		model.addEq(oneExitingByZero, 1);
+				oneLeavingRoot.addTerm(1, x[index]);
+		model.addEq(oneLeavingRoot, 1);
 		// end constraint (17)
 
 		// constraint (18)
@@ -232,27 +214,28 @@ public class Main {
 		// end constraint (18)
 
 		// constraint (19)
-		IloLinearNumExpr kExitingByZero = model.linearNumExpr();
+		IloLinearNumExpr kUnitsLeavingRoot = model.linearNumExpr();
 		for (int index = 0; index < numberOfEdges; index++)
 			if (edges[index].getEndpoint_1() == 0)
-				kExitingByZero.addTerm(1, f[index]);
-		model.addEq(kExitingByZero, k);
+				kUnitsLeavingRoot.addTerm(1, f[index]);
+
+		model.addEq(kUnitsLeavingRoot, k);
 		// end constraint (19)
 
 		// constraint (20)
 		for (int node = 1; node < numberOfNodes; node++) {
-			IloLinearNumExpr oneFlowMantained = model.linearNumExpr();
+			IloLinearNumExpr oneUnitMantained = model.linearNumExpr();
 			for (int index = 0; index < numberOfEdges; index++) {
 				if (edges[index].getEndpoint_2() == node) {
-					oneFlowMantained.addTerm(1, f[index]);
+					oneUnitMantained.addTerm(1, f[index]);
 					if (edges[index].getEndpoint_1() != 0)
-						oneFlowMantained.addTerm(-1, f[index + numberOfEdges - (numberOfNodes - 1)]);
+						oneUnitMantained.addTerm(-1, f[index + numberOfEdges - (numberOfNodes - 1)]);
 				} else if (edges[index].getEndpoint_1() == node) {
-					oneFlowMantained.addTerm(1, f[index + numberOfEdges - (numberOfNodes - 1)]);
-					oneFlowMantained.addTerm(-1, f[index]);
+					oneUnitMantained.addTerm(1, f[index + numberOfEdges - (numberOfNodes - 1)]);
+					oneUnitMantained.addTerm(-1, f[index]);
 				}
 			}
-			model.addEq(oneFlowMantained, y[node]);
+			model.addEq(oneUnitMantained, y[node]);
 		}
 		// end constraint (20)
 
@@ -269,21 +252,15 @@ public class Main {
 
 	}
 
-	private static void createMCFModel(IloCplex model) throws IloException {
-
-		System.out.println("Loading MCF..");
-		// creating the model
-		model.setOut(null);
-		model.setParam(IloCplex.Param.TimeLimit, 3600);
+	private static void createMCF(IloCplex model) throws IloException {
+//		System.out.println("Loading MCF best..");
 
 		// creating variables
 		IloNumVar[] x = model.boolVarArray(numberOfEdges * 2 - (numberOfNodes - 1));
 
 		IloNumVar[][] f = new IloNumVar[numberOfEdges * 2 - (numberOfNodes - 1)][];
 		for (int index = 0; index < numberOfEdges * 2 - (numberOfNodes - 1); index++)
-			f[index] = model.numVarArray(k, 0, 1);
-
-		
+			f[index] = model.numVarArray(numberOfNodes, 0, 1);
 
 		IloNumVar[] y = model.boolVarArray(numberOfNodes);
 
@@ -307,11 +284,11 @@ public class Main {
 		// end constraint (28)
 
 		// constraint (29)
-		IloLinearNumExpr oneExitingByZero = model.linearNumExpr();
+		IloLinearNumExpr oneLeavingRoot = model.linearNumExpr();
 		for (int index = 0; index < numberOfEdges; index++)
 			if (edges[index].getEndpoint_1() == 0)
-				oneExitingByZero.addTerm(1, x[index]);
-		model.addEq(oneExitingByZero, 1);
+				oneLeavingRoot.addTerm(1, x[index]);
+		model.addEq(oneLeavingRoot, 1);
 		// end constraint (29)
 
 		// constraint (30)
@@ -319,7 +296,7 @@ public class Main {
 			int endPoint_1 = edges[index].getEndpoint_1();
 			int endPoint_2 = edges[index].getEndpoint_2();
 
-			if (endPoint_1 != 0)
+			if (endPoint_1 != 0 && endPoint_2 != 0)
 				model.addGe(model.sum(y[endPoint_1], y[endPoint_2]), model.sum(model.prod(2, x[index]),
 						model.prod(2, x[index + numberOfEdges - (numberOfNodes - 1)])));
 
@@ -327,30 +304,29 @@ public class Main {
 		// end constraint (30)
 
 		// constraint (31)
-		for (int commodity = 1; commodity < numberOfNodes; commodity++) {
+		for (int commodity = 0; commodity < numberOfNodes; commodity++) {
 			for (int node = 0; node < numberOfNodes; node++) {
 				// compute produced flow for each node and for each commodity
 				IloLinearNumExpr mantainedFlowFromIndexCommmodityI = model.linearNumExpr();
 				for (int arc = 0; arc < numberOfEdges; arc++) {
 					if (edges[arc].getEndpoint_2() == node) {
+						mantainedFlowFromIndexCommmodityI.addTerm(1, f[arc][commodity]);
+						if (edges[arc].getEndpoint_1() != 0)
+							mantainedFlowFromIndexCommmodityI.addTerm(-1,
+									f[arc + numberOfEdges - (numberOfNodes - 1)][commodity]);
+					} else if (edges[arc].getEndpoint_1() == node) {
 						mantainedFlowFromIndexCommmodityI.addTerm(-1, f[arc][commodity]);
 
 						if (edges[arc].getEndpoint_1() != 0)
 							mantainedFlowFromIndexCommmodityI.addTerm(1,
 									f[arc + numberOfEdges - (numberOfNodes - 1)][commodity]);
-					} else if (edges[arc].getEndpoint_1() == node) {
-						mantainedFlowFromIndexCommmodityI.addTerm(1, f[arc][commodity]);
-
-						if (edges[arc].getEndpoint_1() != 0)
-							mantainedFlowFromIndexCommmodityI.addTerm(-1,
-									f[arc + numberOfEdges - (numberOfNodes - 1)][commodity]);
 					}
 				}
 
-				if (node == 0)
-					model.addEq(mantainedFlowFromIndexCommmodityI, y[commodity]);
-				else if (node == commodity)
-					model.addEq(mantainedFlowFromIndexCommmodityI, model.prod(-1, y[node]));
+				if (node == 0 && commodity != 0)
+					model.addEq(mantainedFlowFromIndexCommmodityI, model.prod(-1, y[commodity]));
+				else if (node == commodity && commodity != 0)
+					model.addEq(mantainedFlowFromIndexCommmodityI, y[node]);
 				else
 					model.addEq(mantainedFlowFromIndexCommmodityI, 0);
 
@@ -372,7 +348,6 @@ public class Main {
 		// end constraint (32)
 
 		model.addEq(y[0], 1); // constraint (33)
-
 	}
 
 	private static void readInstance(int i) throws NumberFormatException, IOException {

@@ -47,12 +47,12 @@ public class MainVecchio {
 
 	public static void main(String[] args) throws IOException, IloException {
 
-		for (int i = 1; i <= 1; i++) {
+		for (int i = 1; i <= 10; i++) {
 
 			readInstance(i);
 
 			for (int iter = 0; iter <= 1; iter++) {
-				for (int a = 0; a <= 1; a++) {
+				for (int a = 2; a <= 2; a++) {
 					IloCplex model = new IloCplex();
 					if (a == 0)
 						createMtzModel(iter, model);
@@ -62,12 +62,12 @@ public class MainVecchio {
 						createMCFModel(iter, model);
 
 					model.exportModel("old.lp");
-					// long start = System.currentTimeMillis();
+					 long start = System.currentTimeMillis();
 					// double startC = model.getCplexTime();
 					if (model.solve()) {
-//					long elapsed = (System.currentTimeMillis() - start) / 1000;
+					long elapsed = (System.currentTimeMillis() - start) / 1000;
 //					double elapsedC = model.getCplexTime() - startC;
-						System.out.print(model.getObjValue() + " ");
+						System.out.print(model.getObjValue() + " "+elapsed);
 //
 //					for (int index = 0; index < numberOfNodes; index++) {
 //
